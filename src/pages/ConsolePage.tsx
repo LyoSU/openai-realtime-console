@@ -34,6 +34,21 @@ interface RealtimeEvent {
   event: { [key: string]: any };
 }
 
+// Додаємо новий інтерфейс для візуалізатора
+interface AudioVisualizer {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  analyser: AnalyserNode;
+  dataArray: Uint8Array;
+  animationId: number;
+}
+
+// Додаємо новий інтерфейс для аудіо даних
+interface AudioLevel {
+  level: number;
+  id: number;
+}
+
 export function ConsolePage() {
   /**
    * Add this near the top with other state declarations
@@ -106,12 +121,30 @@ export function ConsolePage() {
   // Змінюємо початковий стан для canPushToTalk на false (тобто VAD режим)
   const [canPushToTalk, setCanPushToTalk] = useState(false);
 
-  // Додаємо нові стани
+  // Додамо нові стани
   const [fontSize, setFontSize] = useState('normal'); // 'small' | 'normal' | 'large'
   const [showSettings, setShowSettings] = useState(false);
 
   // Додаємо новий стан на початку компонента
   const [isReady, setIsReady] = useState(false);
+
+  // Додаємо новий стан для візуалізатора
+  const [visualizer, setVisualizer] = useState<AudioVisualizer | null>(null);
+
+  // Додаємо новий стан для анімації
+  const [isRecordingActive, setIsRecordingActive] = useState(false);
+
+  // Додаємо нові стани
+  const [audioLevels, setAudioLevels] = useState<AudioLevel[]>([
+    { level: 20, id: 1 },
+    { level: 20, id: 2 },
+    { level: 20, id: 3 },
+    { level: 20, id: 4 },
+    { level: 20, id: 5 },
+  ]);
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number>();
 
   /**
    * Utility for formatting the timing of logs
@@ -160,7 +193,7 @@ export function ConsolePage() {
         setIsRecording(false);
       }
       
-      // Оновлюємо налаштування сесії
+      // Оновлюємо налашування сесії
       if (client.isConnected()) {
         await client.updateSession({
           turn_detection: value === 'none' ? null : { type: 'server_vad' },
@@ -185,62 +218,206 @@ export function ConsolePage() {
     }
   };
 
+  // Додаємо функцію для створення візуалізатора
+  const createVisualizer = useCallback((stream: MediaStream) => {
+    const canvas = clientCanvasRef.current;
+    if (!canvas) {
+      console.error('Canvas element not found');
+      return;
+    }
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      console.error('Could not get canvas context');
+      return;
+    }
+    
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    
+    analyser.fftSize = 256;
+    source.connect(analyser);
+    
+    // Встановлюємо розміри канвасу
+    canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+    canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+    canvas.style.width = `${canvas.offsetWidth}px`;
+    canvas.style.height = `${canvas.offsetHeight}px`;
+    
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    
+    const newVisualizer: AudioVisualizer = {
+      canvas,
+      ctx,
+      analyser,
+      dataArray,
+      animationId: 0
+    };
+    
+    setVisualizer(newVisualizer);
+    
+    // Починаємо анімацію
+    function animate() {
+      const animationId = requestAnimationFrame(animate);
+      newVisualizer.animationId = animationId;
+      
+      if (!canvas || !ctx) return;
+      
+      analyser.getByteFrequencyData(dataArray);
+      
+      // Очищаємо канвас
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Малюємо фон
+      ctx.fillStyle = 'rgba(17, 24, 39, 0.7)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      const barWidth = (canvas.width / dataArray.length) * 2.5;
+      let barHeight;
+      let x = 0;
+      
+      for(let i = 0; i < dataArray.length; i++) {
+        barHeight = (dataArray[i] / 255) * canvas.height * 0.7;
+        
+        // Градієнт для кожної смуги
+        const gradient = ctx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
+        gradient.addColorStop(0, '#818cf8');
+        gradient.addColorStop(1, '#4f46e5');
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+        
+        x += barWidth + 1;
+      }
+    }
+    
+    animate();
+  }, []);
+
+  // Оновлюємо функцію updateAudioLevels
+  const updateAudioLevels = useCallback(() => {
+    const wavRecorder = wavRecorderRef.current;
+    
+    if (wavRecorder && wavRecorder.recording) {
+      const frequencies = wavRecorder.getFrequencies('voice');
+      if (frequencies && frequencies.values) {
+        // Збільшуємо амплітуду коливань
+        const amplifiedValues = Array.from(frequencies.values).map(val => val * 2.5);
+        const average = amplifiedValues.reduce((acc, val) => acc + val, 0) 
+          / amplifiedValues.length;
+        
+        // Додаємо більше випадковості та динаміки
+        setAudioLevels(prev => 
+          prev.map((level, index) => {
+            const randomFactor = Math.random() * 20 - 10; // Випадкове значення від -10 до 10
+            const baseLevel = Math.min(100, Math.max(20, (average * 150) + (index * 10))); // Збільшили множник до 150
+            const newLevel = baseLevel + randomFactor;
+            
+            return {
+              id: level.id,
+              level: Math.min(100, Math.max(20, newLevel)) // Обмежуємо значення між 20 та 100
+            };
+          })
+        );
+      }
+    } else {
+      // Коли запис не йде, встановлюємо мінімальні значення з невеликими коливаннями
+      setAudioLevels(prev => 
+        prev.map(level => ({
+          id: level.id,
+          level: 20 + Math.random() * 5
+        }))
+      );
+    }
+
+    animationFrameRef.current = requestAnimationFrame(updateAudioLevels);
+  }, []);
+
   /**
    * Connect to conversation:
    * WavRecorder takes speech input, WavStreamPlayer output, client is API client
    */
   const connectConversation = useCallback(async () => {
-    console.log('Starting connection...'); // Для дебагу
     try {
-      const client = clientRef.current;
-      const wavRecorder = wavRecorderRef.current;
-      const wavStreamPlayer = wavStreamPlayerRef.current;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setIsRecordingActive(true);
+      
+      // Запускаємо анімацію одразу після встановлення isRecordingActive
+      animationFrameRef.current = requestAnimationFrame(updateAudioLevels);
+      
+      console.log('Starting connection...');
+      try {
+        const client = clientRef.current;
+        const wavRecorder = wavRecorderRef.current;
+        const wavStreamPlayer = wavStreamPlayerRef.current;
 
-      if (!client || !wavRecorder || !wavStreamPlayer) {
-        console.error('Required components are not initialized');
-        return;
-      }
+        if (!client || !wavRecorder || !wavStreamPlayer) {
+          console.error('Required components are not initialized');
+          return;
+        }
 
-      console.log('Components checked, proceeding with connection...'); // Для дебагу
-      startTimeRef.current = new Date().toISOString();
-      setIsConnected(true);
-      setRealtimeEvents([]);
-      setItems(client.conversation.getItems());
+        console.log('Components checked, proceeding with connection...');
+        startTimeRef.current = new Date().toISOString();
+        setIsConnected(true);
+        setRealtimeEvents([]);
+        setItems(client.conversation.getItems());
 
-      await wavRecorder.begin();
-      await wavStreamPlayer.connect();
-      await client.connect();
+        await wavRecorder.begin();
+        await wavStreamPlayer.connect();
+        await client.connect();
 
-      if (client.isConnected()) {
-        console.log('Successfully connected!'); // Для дебагу
-        await client.updateSession({
-          turn_detection: { type: 'server_vad' },
-        });
-        
-        client.sendUserMessageContent([
-          {
-            type: 'input_text',
-            text: 'Привіт!',
-          },
-        ]);
+        if (client.isConnected()) {
+          console.log('Successfully connected!');
+          await client.updateSession({
+            turn_detection: { type: 'server_vad' },
+          });
+          
+          client.sendUserMessageContent([
+            {
+              type: 'input_text',
+              text: 'Привіт!',
+            },
+          ]);
 
-        await wavRecorder.record((data) => {
-          if (client.isConnected()) {
-            client.appendInputAudio(data.mono);
-          }
-        });
+          await wavRecorder.record((data) => {
+            if (client.isConnected()) {
+              client.appendInputAudio(data.mono);
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error connecting conversation:', error);
+        setIsConnected(false);
+        setIsRecordingActive(false);
       }
     } catch (error) {
-      console.error('Error connecting conversation:', error);
+      console.error('Error connecting:', error);
       setIsConnected(false);
+      setIsRecordingActive(false);
     }
-  }, []);
+  }, [updateAudioLevels]);
 
   /**
    * Disconnect and reset conversation state
    */
   const disconnectConversation = useCallback(async () => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    
+    if (audioContext) {
+      await audioContext.close();
+    }
+    
+    setAudioContext(null);
+    setAnalyser(null);
+    setIsRecordingActive(false);
     setIsConnected(false);
+    
+    // Скидаємо рівні до початкових значень
+    setAudioLevels(prev => prev.map(level => ({ ...level, level: 20 })));
+    
     setIsRecording(false);
     setRealtimeEvents([]);
     setItems([]);
@@ -254,7 +431,7 @@ export function ConsolePage() {
 
     const wavStreamPlayer = wavStreamPlayerRef.current;
     await wavStreamPlayer.interrupt();
-  }, []);
+  }, [audioContext]);
 
   const deleteConversationItem = useCallback(async (id: string) => {
     const client = clientRef.current;
@@ -307,8 +484,10 @@ export function ConsolePage() {
       if (isLoaded) {
         if (clientCanvas) {
           if (!clientCanvas.width || !clientCanvas.height) {
-            clientCanvas.width = clientCanvas.offsetWidth;
-            clientCanvas.height = clientCanvas.offsetHeight;
+            clientCanvas.width = clientCanvas.offsetWidth * window.devicePixelRatio;
+            clientCanvas.height = clientCanvas.offsetHeight * window.devicePixelRatio;
+            clientCanvas.style.width = `${clientCanvas.offsetWidth}px`;
+            clientCanvas.style.height = `${clientCanvas.offsetHeight}px`;
           }
           clientCtx = clientCtx || clientCanvas.getContext('2d');
           if (clientCtx) {
@@ -316,14 +495,15 @@ export function ConsolePage() {
             const result = wavRecorder.recording
               ? wavRecorder.getFrequencies('voice')
               : { values: new Float32Array([0]) };
+            
             WavRenderer.drawBars(
               clientCanvas,
               clientCtx,
               result.values,
-              '#0099ff',
-              10,
-              0,
-              8
+              '#4F46E5',
+              20,
+              2,
+              16
             );
           }
         }
@@ -603,7 +783,7 @@ export function ConsolePage() {
         <Settings size={24} className="text-gray-300" />
       </button>
 
-      {/* Панель налаштувань */}
+      {/* Панель нааштувань */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-40">
           <div className="bg-gradient-to-b from-gray-800 to-gray-900 p-6 rounded-3xl shadow-2xl max-w-md w-full mx-4">
@@ -643,71 +823,80 @@ export function ConsolePage() {
       <main className="h-full flex flex-col">
         <div className="flex-1 overflow-y-auto p-4 relative">
           <div className="space-y-6 min-h-full flex flex-col justify-end">
-            {items.map((item, index) => (
-              <div 
-                key={item.id}
-                className={`flex ${item.role === 'assistant' ? 'justify-start' : 'justify-end'} animate-fade-slide-up`}
-                style={{
-                  animationDelay: `${index * 0.1}s`,
-                  opacity: 0,
-                  animation: 'fade-slide-up 0.5s ease forwards'
-                }}
-              >
-                <div className={`max-w-[90%] rounded-3xl p-6 shadow-2xl backdrop-blur-sm transform transition-all duration-300 hover:scale-[1.02] ${
-                  item.role === 'assistant' 
-                    ? 'bg-gradient-to-br from-gray-800/90 to-gray-900/90 border border-gray-700/30' 
-                    : 'bg-gradient-to-br from-indigo-600/90 to-indigo-800/90 border border-indigo-500/30'
-                }`}>
-                  <div className={`${getFontSize(fontSize)} font-medium leading-relaxed`}>
-                    {item.formatted.transcript || item.formatted.text || '...'}
-                  </div>
-                  
-                  {item.formatted.file && (
-                    <div className="mt-4 transform transition-all duration-300">
-                      <audio
-                        src={item.formatted.file.url}
-                        preload="metadata"
-                        className="hidden"
-                      />
-                      <div className="flex items-center gap-4 bg-black/20 rounded-2xl p-4 backdrop-blur-sm">
-                        <button 
-                          onClick={(e) => {
-                            const audio = e.currentTarget.parentElement?.previousElementSibling as HTMLAudioElement;
-                            if (audio.paused) {
-                              audio.play();
-                              e.currentTarget.innerHTML = `
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                  <rect x="6" y="4" width="4" height="16"></rect>
-                                  <rect x="14" y="4" width="4" height="16"></rect>
-                                </svg>
-                              `;
-                            } else {
-                              audio.pause();
-                              e.currentTarget.innerHTML = `
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                                </svg>
-                              `;
-                            }
-                          }}
-                          className="w-12 h-12 flex items-center justify-center rounded-xl bg-indigo-600/80 hover:bg-indigo-600 transition-all"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                          </svg>
-                        </button>
-                        
-                        <div className="flex-1 h-2 bg-black/20 rounded-full overflow-hidden">
-                          <div className="audio-progress-bar h-full bg-indigo-500 rounded-full w-0" />
-                        </div>
-                        
-                        <span className="audio-time text-lg font-medium">0:00</span>
-                      </div>
+            {items
+              .filter(item => {
+                // Перевіряємо наявність контенту перед відображенням
+                return (
+                  item.formatted.transcript || 
+                  item.formatted.text || 
+                  (item.formatted.file && item.formatted.file.url)
+                );
+              })
+              .map((item, index) => (
+                <div 
+                  key={item.id}
+                  className={`flex ${item.role === 'assistant' ? 'justify-start' : 'justify-end'} animate-fade-slide-up`}
+                  style={{
+                    animationDelay: `${index * 0.1}s`,
+                    opacity: 0,
+                    animation: 'fade-slide-up 0.5s ease forwards'
+                  }}
+                >
+                  <div className={`max-w-[90%] rounded-3xl p-6 shadow-2xl backdrop-blur-sm transform transition-all duration-300 hover:scale-[1.02] ${
+                    item.role === 'assistant' 
+                      ? 'bg-gradient-to-br from-gray-800/90 to-gray-900/90 border border-gray-700/30' 
+                      : 'bg-gradient-to-br from-indigo-600/90 to-indigo-800/90 border border-indigo-500/30'
+                  }`}>
+                    <div className={`${getFontSize(fontSize)} font-medium leading-relaxed`}>
+                      {item.formatted.transcript || item.formatted.text || '...'}
                     </div>
-                  )}
+                    
+                    {item.formatted.file && (
+                      <div className="mt-4 transform transition-all duration-300">
+                        <audio
+                          src={item.formatted.file.url}
+                          preload="metadata"
+                          className="hidden"
+                        />
+                        <div className="flex items-center gap-4 bg-black/20 rounded-2xl p-4 backdrop-blur-sm">
+                          <button 
+                            onClick={(e) => {
+                              const audio = e.currentTarget.parentElement?.previousElementSibling as HTMLAudioElement;
+                              if (audio.paused) {
+                                audio.play();
+                                e.currentTarget.innerHTML = `
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="6" y="4" width="4" height="16"></rect>
+                                    <rect x="14" y="4" width="4" height="16"></rect>
+                                  </svg>
+                                `;
+                              } else {
+                                audio.pause();
+                                e.currentTarget.innerHTML = `
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                  </svg>
+                                `;
+                              }
+                            }}
+                            className="w-12 h-12 flex items-center justify-center rounded-xl bg-indigo-600/80 hover:bg-indigo-600 transition-all"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            </svg>
+                          </button>
+                          
+                          <div className="flex-1 h-2 bg-black/20 rounded-full overflow-hidden">
+                            <div className="audio-progress-bar h-full bg-indigo-500 rounded-full w-0" />
+                          </div>
+                          
+                          <span className="audio-time text-lg font-medium">0:00</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
 
@@ -755,14 +944,27 @@ export function ConsolePage() {
                     {isRecording ? 'Відпустіть для надсилання' : 'Натисніть для розмови'}
                   </button>
                 ) : (
-                  <div className="h-24 bg-gray-800/50 rounded-2xl p-4 backdrop-blur-sm">
-                    <div className="relative h-full">
-                      <canvas 
-                        ref={clientCanvasRef}
-                        className="absolute inset-0 w-full h-full rounded-xl"
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <p className="text-xl text-gray-400 font-medium">
+                  <div className="relative h-24 rounded-2xl bg-gradient-to-r from-gray-800/90 to-gray-900/90 overflow-hidden">
+                    <div className="absolute inset-0 flex items-center justify-center gap-4">
+                      {/* Індикатор запису */}
+                      <div className={`w-3 h-3 rounded-full bg-red-500 ${isRecordingActive ? 'animate-pulse' : ''}`} />
+                      
+                      <div className="flex items-center gap-3">
+                        {/* Анімовані смуги, що реагують на звук */}
+                        <div className="flex items-end gap-1 h-12">
+                          {audioLevels.map(({ level, id }) => (
+                            <div
+                              key={id}
+                              className="w-1.5 bg-gradient-to-t from-indigo-600 to-indigo-400 rounded-full transition-all duration-75" // Зменшили duration
+                              style={{
+                                height: `${level}%`,
+                                transform: `scaleY(${level / 50})`, // Додаємо масштабування для більшої виразності
+                              }}
+                            />
+                          ))}
+                        </div>
+                        
+                        <p className="text-xl text-gray-300 font-medium px-4 py-2 rounded-full bg-gray-900/50 backdrop-blur-sm">
                           Говоріть...
                         </p>
                       </div>
