@@ -723,7 +723,7 @@ export function ConsolePage() {
               <>
                 {canPushToTalk ? (
                   <button
-                    className={`h-24 rounded-2xl text-xl font-medium transition-all shadow-lg ${
+                    className={`h-24 rounded-2xl text-xl font-medium transition-all shadow-lg select-none touch-none ${
                       isRecording 
                         ? 'bg-gradient-to-r from-red-500 to-red-600 shadow-red-500/20' 
                         : 'bg-gradient-to-r from-indigo-600 to-indigo-700 shadow-indigo-500/20'
