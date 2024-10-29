@@ -1,50 +1,34 @@
 import React from 'react';
 import './Button.scss';
 
-import { Icon } from 'react-feather';
-
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  label?: string;
-  icon?: Icon;
-  iconPosition?: 'start' | 'end';
-  iconColor?: 'red' | 'green' | 'grey';
-  iconFill?: boolean;
-  buttonStyle?: 'regular' | 'action' | 'alert' | 'flush';
+  variant?: 'primary' | 'secondary' | 'icon';
+  size?: 'small' | 'medium' | 'large';
+  children: React.ReactNode;
 }
 
-export function Button({
-  label = 'Okay',
-  icon = void 0,
-  iconPosition = 'start',
-  iconColor = void 0,
-  iconFill = false,
-  buttonStyle = 'regular',
-  ...rest
+export function Button({ 
+  variant = 'primary',
+  size = 'medium',
+  children,
+  ...props
 }: ButtonProps) {
-  const StartIcon = iconPosition === 'start' ? icon : null;
-  const EndIcon = iconPosition === 'end' ? icon : null;
-  const classList = [];
-  if (iconColor) {
-    classList.push(`icon-${iconColor}`);
-  }
-  if (iconFill) {
-    classList.push(`icon-fill`);
-  }
-  classList.push(`button-style-${buttonStyle}`);
-
   return (
-    <button data-component="Button" className={classList.join(' ')} {...rest}>
-      {StartIcon && (
-        <span className="icon icon-start">
-          <StartIcon />
-        </span>
-      )}
-      <span className="label">{label}</span>
-      {EndIcon && (
-        <span className="icon icon-end">
-          <EndIcon />
-        </span>
-      )}
+    <button
+      {...props}
+      className={`
+        inline-flex items-center justify-center gap-2 rounded-lg
+        ${variant === 'primary' ? 'bg-indigo-500 hover:bg-indigo-600 text-white' : ''}
+        ${variant === 'secondary' ? 'bg-gray-200 hover:bg-gray-300 text-gray-800' : ''}
+        ${variant === 'icon' ? 'bg-transparent hover:bg-gray-100 text-gray-600' : ''}
+        ${size === 'small' ? 'px-3 py-1.5 text-sm' : ''}
+        ${size === 'medium' ? 'px-4 py-2' : ''}
+        ${size === 'large' ? 'px-6 py-3 text-lg' : ''}
+        transition-colors
+        ${props.className || ''}
+      `}
+    >
+      {children}
     </button>
   );
 }

@@ -1,3 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Решта стилів залишається незмінною */
+
+body {
+  @apply bg-gray-50;
+}
+
+.btn {
+  @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2;
+}
+
+.btn-primary {
+  @apply bg-primary-600 text-white hover:bg-primary-700;
+}
+
+.btn-secondary {
+  @apply bg-white text-gray-700 hover:bg-gray-100 border border-gray-200;
+}
+
+.btn-danger {
+  @apply bg-red-600 text-white hover:bg-red-700;
+}
+
 html,
 body {
   padding: 0px;
@@ -18,4 +44,66 @@ body {
   position: relative;
   width: 100%;
   height: 100%;
+}
+
+/* Voice Interface Styles */
+.voice-interface {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.voice-button {
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #2563eb, #1d4ed8);
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+}
+
+.voice-button.listening {
+  background: linear-gradient(145deg, #dc2626, #b91c1c);
+  animation: pulse 2s infinite;
+}
+
+.processing-indicator {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: 3px solid #2563eb;
+  border-top-color: transparent;
+  animation: spin 1s linear infinite;
+  position: absolute;
+  top: -70px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes spin {
+  to { transform: translateX(-50%) rotate(360deg); }
+}
+
+/* Адаптивний дизайн для різних пристроїв */
+@media (max-width: 768px) {
+  .voice-button {
+    width: 150px;
+    height: 150px;
+    font-size: 1rem;
+  }
 }

@@ -1,0 +1,13 @@
+.audio-progress {
+  cursor: pointer;
+  
+  &:hover {
+    .progress-bar {
+      height: 2px;
+    }
+  }
+}
+
+.progress-bar {
+  transition: height 0.2s ease;
+}

@@ -36,7 +36,12 @@ export class RealtimeRelay {
 
     // Relay: OpenAI Realtime API Event -> Browser Event
     client.realtime.on('server.*', (event) => {
-      this.log(`Relaying "${event.type}" to Client`);
+      if (!event?.type) {
+        this.log(`Received invalid event from OpenAI: ${event}`);
+        return;
+      }
+
+      this.log(`Relaying "${event?.type}" to Client`);
       ws.send(JSON.stringify(event));
     });
     client.realtime.on('close', () => ws.close());
@@ -47,8 +52,14 @@ export class RealtimeRelay {
     const messageHandler = (data) => {
       try {
         const event = JSON.parse(data);
-        this.log(`Relaying "${event.type}" to OpenAI`);
-        client.realtime.send(event.type, event);
+
+        if (!event?.type) {
+          this.log(`Received invalid event from client: ${data}`);
+          return;
+        }
+
+        this.log(`Relaying "${event?.type}" to OpenAI`);
+        client.realtime.send(event?.type, event);
       } catch (e) {
         console.error(e.message);
         this.log(`Error parsing event from client: ${data}`);
