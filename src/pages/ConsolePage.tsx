@@ -146,7 +146,7 @@ export function ConsolePage() {
     }
   }, []);
 
-  // Додаємо функцію для зміни режиму розпізнавання голосу
+  // Оновлюємо функцію changeTurnEndType
   const changeTurnEndType = async (value: string) => {
     try {
       const client = clientRef.current;
@@ -154,16 +154,23 @@ export function ConsolePage() {
       
       if (!client || !wavRecorder) return;
       
-      if (value === 'none' && wavRecorder.getStatus() === 'recording') {
+      // Спочатку зупиняємо поточний запис, якщо він активний
+      if (wavRecorder.getStatus() === 'recording') {
         await wavRecorder.pause();
+        setIsRecording(false);
       }
       
+      // Оновлюємо налаштування сесії
       if (client.isConnected()) {
         await client.updateSession({
           turn_detection: value === 'none' ? null : { type: 'server_vad' },
         });
         
+        // Якщо вибрано VAD режим, починаємо новий запис
         if (value === 'server_vad') {
+          // Невелика затримка для впевненості, що попередній запис зупинено
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
           await wavRecorder.record((data) => {
             if (client.isConnected()) {
               client.appendInputAudio(data.mono);
