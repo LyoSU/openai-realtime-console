@@ -110,6 +110,9 @@ export function ConsolePage() {
   const [fontSize, setFontSize] = useState('normal'); // 'small' | 'normal' | 'large'
   const [showSettings, setShowSettings] = useState(false);
 
+  // Додаємо новий стан на початку компонента
+  const [isReady, setIsReady] = useState(false);
+
   /**
    * Utility for formatting the timing of logs
    */
@@ -180,6 +183,7 @@ export function ConsolePage() {
    * WavRecorder takes speech input, WavStreamPlayer output, client is API client
    */
   const connectConversation = useCallback(async () => {
+    console.log('Starting connection...'); // Для дебагу
     try {
       const client = clientRef.current;
       const wavRecorder = wavRecorderRef.current;
@@ -190,6 +194,7 @@ export function ConsolePage() {
         return;
       }
 
+      console.log('Components checked, proceeding with connection...'); // Для дебагу
       startTimeRef.current = new Date().toISOString();
       setIsConnected(true);
       setRealtimeEvents([]);
@@ -200,6 +205,7 @@ export function ConsolePage() {
       await client.connect();
 
       if (client.isConnected()) {
+        console.log('Successfully connected!'); // Для дебагу
         await client.updateSession({
           turn_detection: { type: 'server_vad' },
         });
@@ -221,7 +227,7 @@ export function ConsolePage() {
       console.error('Error connecting conversation:', error);
       setIsConnected(false);
     }
-  }, [setIsConnected, setRealtimeEvents, setItems]);
+  }, []);
 
   /**
    * Disconnect and reset conversation state
@@ -447,6 +453,9 @@ export function ConsolePage() {
 
     setItems(client.conversation.getItems());
 
+    // В кінці ініціалізації встановлюємо готовність
+    setIsReady(true);
+
     return () => {
       // cleanup; resets to defaults
       client.reset();
@@ -510,7 +519,7 @@ export function ConsolePage() {
     const client = clientRef.current;
     const wavStreamPlayer = wavStreamPlayerRef.current;
     
-    // Перевіряємо чи не йде вже запис
+    // Перевряємо чи не йде вже запис
     if (wavRecorder.getStatus() !== 'recording') {
       setIsRecording(true);
       
@@ -537,21 +546,22 @@ export function ConsolePage() {
     client.createResponse();
   };
 
-  // Додаємо useEffect для автоматичного підключення при завантаженні
+  // Додаємо новий useEffect для автопідключення
   useEffect(() => {
-    if (!isConnected && apiKey !== '') {
-      connectConversation();
-    }
-  }, [isConnected, apiKey, connectConversation]);
+    const autoConnect = async () => {
+      // Перевіряємо готовність компонента та наявність API ключа
+      if (isReady && !isConnected && (apiKey !== '' || LOCAL_RELAY_SERVER_URL)) {
+        console.log('Attempting auto-connection...'); // Для дебагу
+        try {
+          await connectConversation();
+        } catch (error) {
+          console.error('Auto-connection failed:', error);
+        }
+      }
+    };
 
-  // Додаємо useEffect для обробки API ключа та автоматичного підключення
-  useEffect(() => {
-    // Якщо є API ключ, зберігаємо його та підключаємося
-    if (apiKey !== '') {
-      localStorage.setItem('tmp::voice_api_key', apiKey);
-      connectConversation();
-    }
-  }, []); // Виконується тільки при першому рендері
+    autoConnect();
+  }, [isReady, isConnected, apiKey, LOCAL_RELAY_SERVER_URL, connectConversation]);
 
   // Додаємо функцію для отримання розміру тексту
   const getFontSize = (size: string) => {
